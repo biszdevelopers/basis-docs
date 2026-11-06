@@ -2,69 +2,70 @@
 
 ## What is DevConnect?
 
-DevConnect is a shared sign-in service for BASIS applications. It lets student projects use school Microsoft accounts without building their own password systems or requesting a separate Microsoft integration for every application.
+DevConnect is the user-facing name for the basis-auth OpenID Connect service.
+It lets registered applications use a Microsoft Entra sign-in and receive
+tokens for their own resource APIs.
 
-## How does DevConnect work?
+## What happens when I sign in?
 
-An application sends you to DevConnect, which redirects you to Microsoft to verify your school account.
+The app sends you to DevConnect, which signs you in through Microsoft Entra.
+The app then receives an authorization code and exchanges it for tokens.
 
+```md
 ![Sign In Screen](../images/1.png)
+```
 
-Next, you complete your regular microsoft login:
+You may see a Microsoft sign-in prompt:
 
-![MS Login](../images/3.png)
+```md
+![Microsoft Sign In](../images/3.png)
+```
 
-When you return, review the requested access. Select `Allow` to continue to the application or `Deny` to cancel.
+Review the application's requested access on the consent screen. Choose
+**Allow** to continue or **Deny** to cancel.
 
+```md
 ![Consent Screen](../images/2.png)
+```
 
-Afterwards, you will be redirected back to your application.
+Microsoft handles your Microsoft password and any Microsoft MFA prompt.
+DevConnect does not ask you to create a separate password.
 
-The core trick here is to authenticate every user to log into DevConnect first, as it is a certified BASIS application approved by the IT, with sensitive permissions (such as reading chat messages). 
+## What information does an app receive?
 
-This eliminates the need to create multiple applications, such as making two different sub-applications, one for Barry's Ballroom, and the other Barry's Honor Society, both requiring IT approval.
+Each app requests registered scopes for one resource audience. Its access
+token can contain permissions granted for that app. Applications should use
+only the scopes and permissions needed for their features.
 
+The provider retrieves basic account information and a profile picture from
+Microsoft. App-specific resource scopes are not forwarded to Microsoft as
+Microsoft Graph permissions.
 
-## It's not an official Microsoft Login, so it's not safe?
+## Does signing out of one app sign me out everywhere?
 
-DevConnect DO have permission from the IT to read sensitive information, but it DOES NOT require them when unnecessary.
+Each app controls its own application session. An app may also sign out of
+the DevConnect SSO session; that makes the next app ask DevConnect to sign in
+again. Signing out of DevConnect does not sign you out of Microsoft, so
+Microsoft may not ask for your password again.
 
-DevConnect first checks if a sub-app (e.g. Barry's Central Intelligence Agency) needs any sensitive permissions (such as reading chat messages). If it does, then DevConnect will request Microsoft to grant such permission to DevConnect first, then to the sub-app.
+## Why can I not sign in to an app?
 
-For apps that DO NOT require sensitive permission (e.g. Barry's Ballroom), DevConnect will NEVER request Microsoft for such permission, and DevConnect in turn will also not be able to use those sensitive permissions.
+The account must be allowed by that app's configured organization and email
+domain, and it must pass the app's optional email allow-list or block-list.
+Choose the intended Microsoft account. If access still fails, contact the
+application owner or the organization's support team.
 
-In other words, DevConnect does not request redundant or unnecessary permissions.
+The default database migrations map `basischina.com` and `basis-global.com`
+to the default organization. Operators can configure additional suffixes and
+organizations for other deployments.
 
-## Why is there no email and password field?
+## Where should I report a problem?
 
-DevConnect does not create or manage passwords. Your account provider is responsible for checking your password, passkey, multifactor authentication, or other sign-in method.
+Contact the owner or support contact for the application you are trying to use.
+For an account or provider issue, contact the team that operates DevConnect.
 
-## Does signing out of one application sign me out everywhere?
+## What should I do if Microsoft sign-in shows an error?
 
-Each application keeps its own session. Signing out of an application ends that application's session, while signing out of Devconnect ends the shared Devconnect session. Your Microsoft session may remain active until you sign out of Microsoft separately.
-
-~~To sign out of DevConnect, visit `auth.bisz.dev` and then...~~ (WIP)
-To sign out of DevConnect, sign out of any sub-app first. Then, on the consent page, click the **Exit Icon** to log out of DevConnect.
-
-To sign out of Microsoft, you have to... sign out from Microsoft. An easy way would be visiting [Your Microsoft Account](https://accounts.microsoft.com) and log out of there.
-
-## I found an inappropriate application using DevConnect. What should I do?
-
-~~Click the `Report Abuse` link on the bottom right.~~ (WIP)
-
-Message `ChunPing.Wong12024-bisz@basischina.com` to destroy the app.
-
-## What should I do if I cannot sign in?
-
-Make sure you selected the correct Microsoft account and that the account is permitted to use the application. ONLY `@basischina.com` ACCOUNTS ARE ALLOWED
-
-If the problem continues, **contact the sub-app owner first** (e.g. Contact the Student Council President if the Student Council portal is not working)
-
-If you still have concerns, message `ChunPing.Wong12024-bisz@basischina.com` [OR CLICK ME](https://teams.microsoft.com/l/chat/0/0?users=chunping.wong12024-bisz@basischina.com) on Microsoft Teams. Yes he will respond ASAP.
-
-## Who is Barry Blahaj
-He is Barry
-
-## Which district is BIPO???
-Basis International Pacific Ocean
-
+Check that you selected the correct account and follow any Microsoft prompt
+for password reset, MFA, or organization policy. If the problem continues,
+send the displayed error code to your application owner or DevConnect operator.

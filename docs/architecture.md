@@ -1,98 +1,84 @@
 # Architecture
 
-basis-auth is a compact OpenID Connect provider. One Hono process serves the
-protocol and the login UI; an optional second process runs the management
-portal. Both share one PostgreSQL database through separate roles.
+basis-auth is a PostgreSQL-backed OpenID Connect provider. One Node.js process
+serves two HTTP listeners: the public protocol and login UI, plus a private
+internal API. The management portal UI is a separate integration and is not
+included in this repository.
 
-## System components
+## Components
 
 ```mermaid
 flowchart LR
-  subgraph Clients
-    APP[Downstream app]
-    API[Resource API]
-    ADM[Admin browser]
-  end
-  subgraph Server
-    IDP[basis-auth IdP]
-    PORTAL[Admin portal]
-  end
-  subgraph Upstream
-    MSFT[Microsoft Entra]
-  end
-  DB[(PostgreSQL)]
-
-  APP -->|OIDC redirect| IDP
-  IDP -->|MS OIDC| MSFT
-  ADM -->|session| PORTAL
-  PORTAL -->|OIDC login| IDP
-  IDP --> SQL1[(reads / writes)]
-  PORTAL --> SQL2[(least privilege)]
+  APP[Downstream app / BFF] -->|OIDC authorization code + PKCE| IDP[Public basis-auth listener]
+  APP -->|Bearer access token| API[Resource API]
+  API -->|JWKS fetch| IDP
+  IDP -->|Microsoft OIDC| MSFT[Microsoft Entra]
+  IDP --> DB[(PostgreSQL)]
+  PORTAL[Trusted management service] -->|INTERNAL_API_TOKEN| INT[Private listener]
+  INT --> DB
 ```
 
-The IdP is the only component that talks to Microsoft Entra. The portal never
-sees upstream credentials: it authenticates its operators *through* the IdP
-itself using authorization code flow with PKCE.
+The private listener runs in the same service process and uses the same database
+connection. Its default bind is `127.0.0.1:3001`; the public listener defaults
+to port `3000`. The management integration presents an end-user access token
+for delegated management operations.
 
-```mermaid
-flowchart TD
-  U[Browser] --> A[GET /auth/start]
-  A --> B[Portal builds<br/>PKCE + state cookie]
-  B --> C[Redirect to IdP<br/>/oauth/authorize]
-  C --> D{SSO session?}
-  D -- yes --> E[Consent or auto-approve]
-  D -- no --> F[Login UI]
-  F --> G[Microsoft]
-  G --> H[Callback attaches user]
-  H --> E
-  E --> I[Code to portal callback]
-  I --> J[Token exchange +<br/>permission check]
-  J --> K[Admin session cookie]
-```
-
-## Token model
-
-Access tokens are ten-minute RS256 JWTs (`typ=at+jwt`) whose audience names a
-resource API. Refresh tokens rotate on every use; reusing a rotated token
-revokes the entire token family.
+## Authorization flow
 
 ```mermaid
 sequenceDiagram
-  autonumber
-  participant App as Application BFF
+  participant Browser
+  participant App as Downstream BFF
   participant IdP as basis-auth
-  participant API as Resource API
-  App->>IdP: POST /oauth/token (code, verifier)
-  IdP-->>App: access_token + refresh_token
-  App->>API: Authorization: Bearer access_token
-  API-->>App: 200 (JWT validated locally)
-  Note over App,IdP: Later, near expiry
-   App->>IdP: POST /oauth/token (refresh_token)
-   IdP-->>App: new refresh token family entry
-
-## Performance and caching
-
-The hot path is built for throughput on a single instance:
-
-- **Client metadata cache** (`src/oauth/clientCache.ts`) — clients and resource
-  servers are loaded once and cached in an LRU; `redirectUriSet` and
-  `filterContentSet` make per-request checks O(1).
-- **Single-query identity assembly** — token and userinfo responses are built
-  from one query plus memoized key/permission lookups, so user and permission
-  data are computed once per token issue.
-- **Atomic refresh rotation** — refresh-token families rotate in a single
-  transaction; reuse revokes the whole family.
-- **Rate limiting** (`src/middleware/rateLimit.ts`) — a fixed-window,
-  process-local limiter (120 req/min per IP+route) guards the token, revoke,
-  authorize, consent, Microsoft callback, and `/api/me` endpoints.
-- **Discovery and JWKS caching** — `/.well-known/*` and `/oauth/jwks` send
-  `Cache-Control: public, max-age=300`.
-- **Session idle timeout** — SSO sessions expire after `SESSION_IDLE_TIMEOUT_MS`
-  of inactivity (default 12h) and absolutely after `SESSION_ABSOLUTE_MAX_MS`
-  (default 30d); last-seen time is refreshed at most every five minutes.
-
-Avatar bytes are served from `/api/picture/:userId` and are only available to
-the signed-in user themselves (SSO session required, self-only). The
-`permissions` claim is only emitted when the issued token's scope includes
-`permissions`.
+  participant Entra as Microsoft Entra
+  Browser->>App: Start login
+  App->>Browser: Redirect to /oauth/authorize with state, nonce, S256 PKCE
+  Browser->>IdP: Authorization request
+  IdP->>Browser: Login / consent UI
+  Browser->>Entra: Microsoft sign-in
+  Entra->>IdP: /oauth/callback/microsoft
+  IdP->>Browser: Redirect to downstream callback with code + state
+  Browser->>App: Callback
+  App->>IdP: /oauth/token with code + verifier
+  IdP-->>App: ID token + access token (+ refresh token)
 ```
+
+Each authorization request selects exactly one resource audience. A configured
+client with one resource may omit `resource`; otherwise the request must name
+one of the client's registered resources.
+
+## Token lifecycle
+
+- Authorization requests expire after 10 minutes.
+- Authorization codes are single-use and expire after 60 seconds.
+- ID tokens are RS256 JWTs with a 10-minute lifetime.
+- Access tokens are RS256 JWTs with `typ=at+jwt`. Their lifetime defaults to
+  10 minutes and is configurable with `ACCESS_TOKEN_LIFETIME_MS`.
+- Refresh tokens are opaque, stored as hashes, expire after 30 days, and rotate
+  on use. Reusing a consumed or expired token revokes the token family.
+- Confidential clients can also use `client_credentials`. These tokens identify
+  the client, contain no user permissions, and have no refresh token or ID token.
+
+The access token `aud` is its selected resource audience. Its permissions are
+specific to the client that issued it. The `permissions` array is present in
+access tokens even when empty; it is not an OIDC request scope.
+
+## Persistence and runtime behavior
+
+The database stores upstream user identities, mapped email suffixes and
+organizations, client and resource registrations, application-scoped permission
+definitions and grants, sessions, authorization requests and codes, refresh
+token families, and remembered consent.
+
+- Client metadata uses a process-local LRU cache with a 60-second TTL.
+- Resource-server rows are checked during authorization and token issuance.
+- Discovery metadata is cached for 300 seconds by HTTP clients; JWKS advertises
+  `max-age=300` and `stale-while-revalidate=300`.
+- Rate limits are process-local: 120 requests per minute per IP and route on
+  selected public endpoints.
+- SSO sessions use a 12-hour idle timeout and 30-day absolute cap by default.
+  `SESSION_IDLE_TIMEOUT_MS` and `SESSION_ABSOLUTE_MAX_MS` can change those limits.
+
+`GET /api/picture/:userId` serves stored profile pictures without an SSO
+session. It returns 404 when no picture is stored, uses a five-minute public
+cache, and sets `Cross-Origin-Resource-Policy: same-site`.

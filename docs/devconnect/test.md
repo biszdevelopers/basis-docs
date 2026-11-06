@@ -1,30 +1,23 @@
 # DevConnect Test Guide
 
-This page describes how to run the basis-auth test suite, what the tests
-cover, and how to run the optional PostgreSQL integration tests **without
-Docker**.
+This page describes the repository test commands and the optional PostgreSQL
+integration suite. Docker is not required.
 
-## Running the unit and route tests
+## Unit and route tests
 
-The default suite needs no database and no Docker:
+The default suite needs no database:
 
 ```bash
 bun install
 bun run test
 ```
 
-`bun run test` runs Vitest (`vitest run`). It covers:
+`bun run test` runs Vitest in single-run mode. The suite covers authorization,
+token exchange, refresh rotation, revocation, UserInfo, identity assembly,
+client caching, scope checks, signing keys, rate limiting, sessions, config,
+Microsoft identity/error mapping, and web UI helpers.
 
-- Protocol behavior (authorize, token, refresh rotation, revocation, userinfo).
-- Identity assembly, client caching, and scope coverage.
-- Key issuance/verification and the in-memory rate limiter.
-- Session idle and absolute timeouts.
-- Configuration loading and validation (including the placeholder
-  `OIDC_COOKIE_KEYS` rejection).
-- Microsoft upstream mapping and email-verified resolution.
-- Web UI helpers (for example `scope-description`).
-
-Watch mode:
+Use watch mode during development:
 
 ```bash
 bun run test:watch
@@ -33,37 +26,26 @@ bun run test:watch
 ## Coverage
 
 Coverage uses `@vitest/coverage-v8` and is configured in `vitest.config.ts`.
-A small set of files (logging, rate limiting, scopes, client cache, and key
-handling) are gated at 100% line, branch, function, and statement coverage so
-security-sensitive paths stay fully exercised.
+Logging, rate limiting, scope coverage, client caching, and key handling have
+100% line, branch, function, and statement thresholds.
 
-## PostgreSQL integration tests (no Docker required)
+## PostgreSQL integration tests
 
-The end-to-end OAuth flow lives in `src/oauth/service.integration.test.ts`.
-It no longer spins up a container — instead it connects to a PostgreSQL
-instance you already have.
+`src/oauth/service.integration.test.ts` runs only when both
+`RUN_POSTGRES_TESTS=1` and `DATABASE_URL` are set. It connects to the supplied
+PostgreSQL database and applies the checked-in migrations.
 
-To run it:
-
-1. Point `DATABASE_URL` at any reachable PostgreSQL 14+ database.
-2. Set `RUN_POSTGRES_TESTS=1`.
-3. Run `bun run test`.
+Use a dedicated disposable database. The suite inserts and updates test
+registrations and users; do not point it at production or a shared database.
 
 ```bash
-RUN_POSTGRES_TESTS=1 \
-DATABASE_URL="postgresql://basis_auth:basis_auth@localhost:5432/basis_auth" \
-bun run test
+RUN_POSTGRES_TESTS=1 DATABASE_URL="postgresql://basis_auth:basis_auth@localhost:5432/basis_auth" bun run test
 ```
-
-The suite is **skipped** unless both `RUN_POSTGRES_TESTS=1` and a non-empty
-`DATABASE_URL` are present, so CI that does not configure a database stays
-green without Docker. The integration test applies its own migrations to the
-target database on startup.
 
 ## Adding tests
 
-Tests are colocated with the module they exercise (`*.test.ts`). Name tests as
-behavior statements, for example:
+Tests are colocated with the module they exercise and use `*.test.ts`
+filenames. Name tests as behavior statements:
 
 ```ts
 it("rejects code replay after a token has been issued", async () => {
@@ -71,5 +53,5 @@ it("rejects code replay after a token has been issued", async () => {
 });
 ```
 
-Keep new security-sensitive logic covered, and add or update tests whenever
-you change authorization, token, identity, configuration, or migration behavior.
+Add or update coverage when changing authorization, token, identity,
+configuration, or migration behavior.

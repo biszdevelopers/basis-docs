@@ -1,95 +1,116 @@
 # Reference
 
-## Protocol endpoints
+## Public listener
 
-| Endpoint | Purpose |
+The public listener defaults to `PORT=3000`.
+
+| Method and route | Purpose |
 | --- | --- |
-| `/.well-known/openid-configuration` | OIDC discovery |
-| `/.well-known/oauth-authorization-server` | OAuth metadata |
-| `/oauth/authorize` | Authorization code flow (PKCE S256 required) |
-| `/oauth/token` | Code and refresh-token exchange |
-| `/oauth/jwks` | RS256 public signing keys |
-| `/oauth/userinfo` | Identity claims (bearer access token) |
-| `/oauth/revoke` | Refresh-token revocation |
-| `/oauth/logout` | Session logout |
-| `/api/me` | Current SSO identity (requires SSO session) |
-| `/api/picture/:userId` | Avatar bytes; requires the SSO session of the requested user (self only) |
+| `GET /health` | Health response `{ "status": "ok" }`. |
+| `GET /.well-known/openid-configuration` | OpenID Connect discovery. |
+| `GET /.well-known/oauth-authorization-server` | OAuth authorization-server metadata. |
+| `GET /oauth/authorize` | Authorization-code request and login/consent UI. S256 PKCE is mandatory. |
+| `GET /oauth/interaction` | Pending interaction data for the built-in UI; requires the interaction cookie. |
+| `POST /oauth/interaction/:uid/consent` | UI consent action; requires the interaction cookie and `x-csrf-token`. |
+| `GET /oauth/upstream/microsoft` | Begins the upstream Microsoft redirect. |
+| `GET /oauth/callback/microsoft` | Microsoft return URI. Register this exact path in Entra. |
+| `GET /oauth/clients/:clientId` | Public client display information and registered owners. |
+| `POST /oauth/token` | Authorization-code, refresh-token, and client-credentials grants. |
+| `GET/POST /oauth/userinfo` | User claims for a valid user access token. |
+| `GET /oauth/jwks` | Public RS256 signing keys. |
+| `POST /oauth/revoke` | Revokes a refresh-token family when the token belongs to the authenticated client. |
+| `GET/POST /oauth/logout` | Ends the basis-auth SSO session. It does not end the Microsoft session. |
+| `GET /api/me` | Current basis-auth session identity; requires the SSO cookie. |
+| `GET /api/picture/:userId` | Stored picture bytes; public to callers who know the user ID. |
+| `GET /dev/demo` | Development-only sample OIDC client. |
 
-## Portal API
+Discovery and JWKS are cached for five minutes. The token endpoint accepts
+form-encoded or JSON request bodies. Use HTTP Basic client authentication for
+confidential authorization-code and refresh-token requests. Public clients
+send `client_id` and no secret. The handler accepts a body `client_secret`
+for the client-credentials grant; use HTTP Basic for confidential clients.
 
-All routes live under `/api` and require an authenticated administrator
-session; mutations additionally require the `x-csrf-token` header.
+The discovery document advertises `client_secret_post`, but the implementation
+does not accept a body secret for authorization-code or refresh-token grants.
+Use `client_secret_basic` for those grants.
 
-| Route | Permission(s) | Notes |
-| --- | --- | --- |
-| `GET /api/me` | any portal role | Current identity, CSRF token, auth time |
-| `GET /api/users` | users.read | Keyset-paginated, searchable |
-| `PUT /api/users/:id/permissions` | users.write + admins.manage for portal grants | Self-edit blocked; last-admin protected |
-| `POST /api/users/:id/disable` | users.write + step-up | Kills sessions, revokes tokens |
-| `POST /api/users/local` | users.write | Creates local account, returns temp password once |
-| `POST /api/users/:id/credentials/reset` | users.write + step-up | New show-once password, clears MFA |
-| `POST /api/users/:id/mfa/reset` | users.write + step-up | Removes TOTP and recovery codes |
-| `DELETE /api/users/:id` | users.write + step-up | Permanent, cascades, audited |
-| `GET/POST /api/clients` | clients.read / clients.write | Registration; confidential apps get a secret once |
-| `POST /api/clients/:id/secrets` | clients.write + step-up | Rotation with overlap windows |
-| `PUT /api/clients/:id/logo` | clients.write + step-up | ≤ 512 KB, png/jpeg/webp/svg |
-| `PUT/DELETE /api/resources/:audience` | resources.write | Deletion refused while referenced |
-| `POST /api/sessions/:id/revoke` | tokens.revoke | SSO session revocation |
-| `POST /api/tokens/family/:id/revoke` | tokens.revoke | Revokes an entire refresh family |
-| `DELETE /api/consents/:user/:client` | consents.revoke | Drops remembered consent |
-| `GET /api/audit`, `GET /api/signins` | audit.read / signins.read | Filterable, keyset-paginated |
-| `GET /api/dashboard/summary` | any portal role | Single-statement aggregate |
-| `PUT /api/settings/lockout` | settings.write + step-up | Requires typed `LOCK` confirmation |
+`/api/picture/:userId` sets a five-minute public cache and is not self-only.
+The separate `/internal/users/:userId/picture` route requires the internal
+bearer token.
+
+## Internal listener
+
+The internal listener defaults to `127.0.0.1:3001`. All routes require
+`Authorization: Bearer <INTERNAL_API_TOKEN>`. Management routes also require
+a delegated user token in `X-Basis-Actor-Token`; see [Management Integration
+API](/portal).
+
+- `GET /internal/users/:userId`, `GET /internal/users/:userId/picture`,
+  `PATCH /internal/users/:userId`
+- `GET /internal/users?page=…&pageSize=…`
+- `GET/PATCH /internal/management/users/:userId`
+- `/internal/applications` and its client, owner, resource, scope, permission,
+  default-permission, credential, and redirect-URI routes
+
+The management UI is not part of this repository.
 
 ## Environment variables
 
-All variables are declared and validated in `src/config.ts`; see `.env.example`
-for the canonical list. Required and commonly set variables:
+Variables with defaults are marked in the table. Session and database tuning
+values are read directly from `process.env`.
 
-| Variable | Purpose |
+| Variable | Purpose and validation |
 | --- | --- |
-| `NODE_ENV` | `development` (default), `test`, or `production` — must be `production` on any public host; `development` with a non-localhost issuer fails at startup |
-| `PORT` | HTTP port for the IdP (default 3000) |
-| `DATABASE_URL` | PostgreSQL connection string (required) |
-| `INTERNAL_API_HOST` / `INTERNAL_API_PORT` / `INTERNAL_API_TOKEN` | How the management portal reaches the IdP's internal API |
-| `OIDC_ISSUER` | Public issuer URL (origin only, no path) |
-| `OIDC_COOKIE_KEYS` | Comma-separated ≥ 32-char session cookie keys; placeholder values are rejected at startup |
-| `OIDC_JWKS_JSON` / `OIDC_JWKS_FILE` | RS256 signing keys; auto-generated in non-production when unset |
-| `OIDC_CLIENTS_JSON` / `OIDC_RESOURCES_JSON` | Seeded clients and resource servers (JSON) |
-| `DEFAULT_PERMISSION` | Permission granted to every signed-in user (default `participant`) |
-| `BOOTSTRAP_PERMISSION_GRANTS_JSON` | Email → permissions grants applied on first boot |
-| `MICROSOFT_ISSUER` / `MICROSOFT_CLIENT_ID` / `MICROSOFT_CLIENT_SECRET` | Upstream Microsoft Entra OIDC (required in production) |
-| `DEVCONNECT_PORTAL_URL` | Where `/` redirects (default `https://devconnect.biszweb.club/me`) |
+| `NODE_ENV` | `development` (default), `test`, or `production`. Production requires Microsoft config, persistent JWKS, and two or more cookie keys. Development requires a loopback issuer. |
+| `PORT` | Public HTTP port; default `3000`. |
+| `DATABASE_URL` | PostgreSQL connection string; required. |
+| `INTERNAL_API_HOST` | Internal listener bind address; default `127.0.0.1`. |
+| `INTERNAL_API_PORT` | Internal listener port; default `3001`. |
+| `INTERNAL_API_TOKEN` | Required, at least 32 characters. |
+| `MANAGEMENT_PORTAL_CLIENT_ID` | Required client ID expected in delegated actor tokens. |
+| `MANAGEMENT_PORTAL_AUDIENCE` | Required resource audience expected in delegated actor tokens. |
+| `MANAGEMENT_PORTAL_SCOPE` | Required scope expected in delegated actor tokens; default `noesis.access`. |
+| `OIDC_ISSUER` | Required URL origin. Paths, query strings, and fragments are rejected. |
+| `OIDC_COOKIE_KEYS` | Comma-separated keys, each at least 32 characters; placeholder strings are rejected. Production requires at least two. |
+| `OIDC_JWKS_JSON` / `OIDC_JWKS_FILE` | Private RSA JWKS. Generated ephemerally outside production; required in production. |
+| `OIDC_CLIENTS_JSON` | JSON array of client registrations seeded on startup. |
+| `OIDC_RESOURCES_JSON` | JSON array of resource-server audiences and supported scopes. |
+| `BOOTSTRAP_PERMISSION_GRANTS_JSON` | JSON array of email, `applicationId`, and app-scoped permission grants. |
+| `MICROSOFT_ISSUER`, `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET` | Must be set together; required in production. |
+| `ACCESS_TOKEN_LIFETIME_MS` | Positive whole seconds in milliseconds; default `600000` (10 minutes). |
+| `CORS_ALLOWED_ORIGINS` | Optional comma-separated origins. Adds CORS headers to `/oauth/token` and `/oauth/userinfo` only for exact matches. |
+| `SESSION_IDLE_TIMEOUT_MS` | SSO idle timeout; default `43200000` (12 hours). |
+| `SESSION_ABSOLUTE_MAX_MS` | SSO absolute cap; default `2592000000` (30 days). |
+| `DATABASE_POOL_MAX` | PostgreSQL pool size; default `10`. |
+| `DATABASE_POOL_IDLE_TIMEOUT_MS` | Pool idle timeout; default `10000` ms. |
+| `DATABASE_CONNECTION_TIMEOUT_MS` | Pool connection timeout; default `5000` ms. |
+| `DATABASE_STATEMENT_TIMEOUT_MS` | Optional PostgreSQL statement timeout in milliseconds. |
 
-Optional hardening and tuning:
+`OIDC_CLIENTS_JSON` entries can define `clientId`, `name`,
+`clientSecret`, `redirectUris`, `public`, `scopes`, `resourceScopes`,
+`permissions`, `defaultPermissions`, `resources`, `requireConsent`,
+`filterMode`, `filterContent`, and `organizationIds`.
 
-| Variable | Purpose |
-| --- | --- |
-| `CORS_ALLOWED_ORIGINS` | Comma-separated origins allowed CORS on `/oauth/token` and `/oauth/userinfo` (default deny) |
-| `SESSION_IDLE_TIMEOUT_MS` | Idle session lifetime (default 12h) |
-| `SESSION_ABSOLUTE_MAX_MS` | Absolute session cap regardless of activity (default 30d) |
-| `DATABASE_POOL_MAX` | Connection pool size (default 10) |
-| `DATABASE_POOL_IDLE_TIMEOUT_MS` | Idle connection timeout (default 10000) |
-| `DATABASE_CONNECTION_TIMEOUT_MS` | Connect timeout (default 5000) |
-| `DATABASE_STATEMENT_TIMEOUT_MS` | Per-statement `statement_timeout` (optional) |
+Identity scopes are `openid`, `profile`, `email`, and `offline_access`.
+Custom scopes belong to a resource server. Permission grants are app-specific
+access-token claims, not a special OIDC scope.
 
-When `CORS_ALLOWED_ORIGINS` is set, matching `Origin` requests on
-`/oauth/token` and `/oauth/userinfo` receive `Access-Control-Allow-Origin`;
-all other origins are denied.
+## OAuth error codes
 
-## Error codes
+The numeric `code` field is an application code, not the HTTP status.
 
-These codes are **not** HTTP status codes.
-
-| Code | Namespace | Meaning |
+| Code | Error | Meaning |
 | --- | --- | --- |
-| 14001 | invalid_client | Client unknown or unregistered |
-| 14002 | invalid_client | Client disabled |
-| 14003 | invalid_client | Public client sent a secret |
-| 14004 | invalid_client | Bad client secret |
-| 14100 | invalid_request | redirect_uri missing or unregistered |
-| 14401 | invalid_scope | Scope not permitted for this client or resource |
-| 14407 | unknown_resource | Resource audience not registered (named in the error); re-save the client via `bun run clients` or add it to `OIDC_RESOURCES_JSON` |
-| 14501 | invalid_target | Resource not registered for this application |
-| 2400 | invalid_request | Interaction cookie missing or expired |
-| 50040 | server_error | Internal failure during login flow |
+| `14001` | `invalid_client` / `invalid_request` | Client ID is unknown or unavailable. |
+| `14003` | `invalid_client` | A public client sent a secret. |
+| `14004` | `invalid_client` | Confidential client secret is missing or invalid. |
+| `14005` | `invalid_client` | Client has no linked organizations. |
+| `14100` | `invalid_request` | Redirect URI is missing or not registered. |
+| `14401` | `invalid_scope` | Scope is not allowed by the client or resource. |
+| `14407` | `unknown_resource` | Resource audience has no resource-server row. |
+| `14429` | `unsupported_response_type` | Response type is not `code`. |
+| `14501` | `invalid_target` | Resource is not registered for the client. |
+| `2400` | `invalid_request` | Authorization interaction is missing or expired. |
+
+Other OAuth errors, including `invalid_grant`, may have no numeric application
+code. Read the `error` and `error_description` fields as well.

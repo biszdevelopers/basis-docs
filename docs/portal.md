@@ -1,70 +1,71 @@
-# Management Portal
+# Management Integration API
 
-The portal is an Entra-style administration surface for the directory. It runs
-as its own process on port 3100 and every screen is permission-gated.
+This repository contains the provider-side internal API used by a trusted
+management service. It does not contain the management portal UI or a public
+`/api/users` administration API.
 
-## Surfaces
+## Two-part authentication
 
-| Section | What you can do |
+Every internal request needs:
+
+```http
+Authorization: Bearer <INTERNAL_API_TOKEN>
+```
+
+The token is checked before routing and the response is marked
+`Cache-Control: no-store`. The default listener is `127.0.0.1:3001`. Keep it
+on loopback or a protected private network.
+
+Routes under `/internal/management` and `/internal/applications` also require
+a user access token in `X-Basis-Actor-Token`. The token must be a user token
+from `MANAGEMENT_PORTAL_CLIENT_ID`, with the configured
+`MANAGEMENT_PORTAL_AUDIENCE` and `MANAGEMENT_PORTAL_SCOPE`. Client-credentials
+tokens are rejected. The actor's `permissions` claims and application ownership
+are checked for each operation.
+
+## User routes
+
+| Route | Behavior |
 | --- | --- |
-| Overview | Live counters, recent sign-ins, recent admin actions, hygiene alerts |
-| Users | Search, inspect, provision local accounts, disable, force sign-out, delete, bulk actions |
-| Roles & admins | Every account holding a portal permission, grouped by role |
-| App registrations | Register apps, rotate multi-secrets, edit properties, upload branding |
-| Resource servers | Audiences and the scopes each accepts |
-| Sessions & tokens | Revoke SSO sessions and refresh-token families |
-| Consent grants | Review and revoke what users allowed apps to access |
-| Sign-in logs | Every authentication attempt with filters |
-| Audit logs | Append-only record of administrator actions |
-| Settings | Emergency lockout switch |
+| `GET /internal/users/:userId` | Returns the user row, including profile, `disabled`, and `tokensValidAfter`. |
+| `GET /internal/users/:userId/picture` | Returns picture bytes, or 404 when absent. |
+| `PATCH /internal/users/:userId` | Trusted-service patch for `displayName`, `email`, `disabled`, and `picture`. Disabling deletes SSO sessions and revokes refresh-token families. |
+| `GET /internal/users?page=…&pageSize=…` | Paginated user list; requires `BiszPortal.Users.read` on the actor token. |
+| `GET /internal/management/users/:userId` | User plus application affiliations, permission definitions, and grants; requires `BiszPortal.Users.read`. |
+| `PATCH /internal/management/users/:userId` | Updates profile fields and per-application grants; requires `BiszPortal.Users.update`. |
 
-## Portal authentication flow
+The non-management user and picture routes require only the internal bearer
+token. Treat that token as a high-trust credential. Management user routes also
+reject attempts to disable the acting user's own account.
 
-```mermaid
-sequenceDiagram
-  autonumber
-  participant B as Browser
-  participant P as Portal
-  participant I as basis-auth IdP
-  B->>P: GET /auth/start
-  P->>I: discovery + authorize (PKCE)
-  I->>I: Microsoft login
-  I-->>B: redirect /auth/callback?code
-  B->>P: GET /auth/callback
-  P->>I: token exchange
-  P->>P: load permissions from DB
-  alt no portal permission
-    P-->>B: error card (forbidden)
-  else has portal permission
-    P-->>B: admin session cookie
-  end
-```
+## Application routes
 
-Permissions are loaded fresh from the database on **every** request, so
-revocations apply mid-session.
+All application routes require both authentication headers. These delegated
+permissions are checked in addition to application ownership for scoped routes.
 
-## Step-up re-authentication
+| Route | Main action | Required permission |
+| --- | --- | --- |
+| `GET /internal/applications` | List caller-owned apps and organizations | `BiszPortal.Applications.read` |
+| `POST /internal/applications` | Create an app registration | `BiszPortal.Applications.create` |
+| `GET /internal/applications/:clientId` | View app details | `BiszPortal.Applications.read` |
+| `PATCH /internal/applications/:clientId` | Change app name, consent, filters, organizations | `BiszPortal.Applications.update` |
+| `DELETE /internal/applications/:clientId` | Delete the app and dependent OAuth data | `BiszPortal.Applications.delete` |
+| `POST /internal/applications/:clientId/credentials` and `DELETE .../credentials` | Rotate or remove a secret | `BiszPortal.ApplicationCredentials.manage` |
+| `POST /internal/applications/:clientId/owners`, `PATCH .../owners/:userId`, `DELETE .../owners/:userId` | Manage owners | `BiszPortal.ApplicationOwners.manage` |
+| `POST /internal/applications/:clientId/resources/attach`; `POST/PATCH/DELETE .../resources` | Attach, create, edit, or remove resources | `BiszPortal.ApplicationResources.manage` |
+| `PUT /internal/applications/:clientId/scopes` | Set client scopes per resource | `BiszPortal.ApplicationScopes.manage` |
+| `POST/PATCH/DELETE /internal/applications/:clientId/permissions` | Edit the app permission catalog | `BiszPortal.ApplicationPermissions.manage` |
+| `PUT /internal/applications/:clientId/default-permissions` | Set first-login defaults | `BiszPortal.ApplicationPermissions.manage` |
+| `PUT /internal/applications/:clientId/redirect-uris` | Replace redirect URI list | `BiszPortal.ApplicationRedirectUris.manage` |
 
-Sensitive operations demand an authentication newer than five minutes. When it
-is stale the API answers `401 step_up_required` and the UI round-trips through
-`prompt=login`, then replays your request.
+The service checks global delegated permissions and caller ownership for
+client-specific changes. See `src/internal/app.ts` and
+`src/internal/applications.ts` for request schemas and response shapes.
 
-```mermaid
-flowchart TD
-  R[Request: reset credentials] --> G{auth_time fresh?}
-  G -- yes --> OK[Perform operation]
-  G -- stale --> S[401 step_up_required]
-  S --> L[prompt=login redirect]
-  L --> N[Fresh sign-in]
-  N --> R
-```
+## Current feature boundary
 
-## Guardrails
-
-- You cannot change your own permissions or disable yourself.
-- The last holder of `portal.admins.manage` cannot be demoted from the UI.
-- Accounts holding any portal permission are shielded: viewing or modifying
-  them additionally requires `portal.privileged.read`.
-- Destructive actions require typed confirmation.
-- Granting or revoking roles fires an HMAC-signed webhook alert when
-  `ALERT_WEBHOOK_URL` and `ALERT_WEBHOOK_SECRET` are configured.
+The internal API supports users, client registrations, owners, resources,
+resource scopes, permission catalogs and defaults, and redirect URIs. It does
+not implement local password accounts, MFA reset, session-list/revoke routes,
+consent-management routes, sign-in or audit logs, dashboard counters, webhook
+alerts, or a portal lockout switch.

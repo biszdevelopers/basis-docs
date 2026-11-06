@@ -4,7 +4,7 @@ layout: home
 hero:
   name: basis-auth
   text: The identity boundary for Basis applications
-  tagline: A compact OpenID Connect provider with an Entra-style management portal. Delegates human login to Microsoft, issues tokens to your apps, and keeps every administrative action auditable.
+  tagline: An OpenID Connect provider that authenticates people through Microsoft Entra and issues tokens for registered applications and APIs.
   actions:
     - theme: brand
       text: Get Started
@@ -13,20 +13,20 @@ hero:
       text: Architecture
       link: /architecture
     - theme: alt
-      text: Management Portal
-      link: /portal
+      text: Integration Guide
+      link: /wiring-up
 
 features:
-  - icon: 🛡️
-    title: Hardened by default
-    details: Fixed-window rate limits per IP, PKCE everywhere, sandboxed image serving, __Host- cookies, append-only audit tables enforced by the application.
-  - icon: ⚡
-    title: Fast on hot paths
-    details: Single-query identity assembly, memoized client metadata, atomic refresh rotation, keyset pagination that never degrades.
-  - icon: 🗂️
-    title: Full admin surface
-    details: Users, app registrations with rotating secrets, resource servers, sessions, consents, sign-in logs, and an immutable audit trail.
-  - icon: 🔑
-    title: Local accounts + MFA
-    details: Provision accounts with show-once credentials, NIST-style password policy, TOTP with hashed recovery codes.
+  - icon: 🔐
+    title: Authorization code + PKCE
+    details: The provider supports authorization code flow. S256 PKCE, state, nonce, and a registered redirect URI are required.
+  - icon: 🪪
+    title: App-specific access
+    details: Each access token is issued for one registered resource audience. User permissions are stored per client application.
+  - icon: 🗄️
+    title: PostgreSQL-backed
+    details: Users, organizations, client registrations, sessions, consents, permissions, codes, and refresh tokens are stored in PostgreSQL.
+  - icon: 🧰
+    title: Integration tools
+    details: Use the client-registration CLI, a development-only OIDC demo, and a private internal API for trusted management integrations.
 ---
