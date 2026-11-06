@@ -3,8 +3,8 @@ import { withMermaid } from "vitepress-plugin-mermaid";
 
 export default withMermaid(
   defineConfig({
-    title: "basis-auth",
-    description: "The authentication and identity boundary for Basis applications.",
+    title: "DevConnect Documentation",
+    description: "Link your basis apps together!",
     base: "/",
     cleanUrls: true,
     vite: {
@@ -34,6 +34,7 @@ export default withMermaid(
             { text: "Getting Started", link: "/getting-started" },
             { text: "Wiring Up Apps", link: "/wiring-up" },
             { text: "Database Setup", link: "/database" },
+            { text: "Our Hardware", link: "/hardware" },
           ],
         },
         {
