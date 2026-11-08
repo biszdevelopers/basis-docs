@@ -6,7 +6,7 @@ The public listener defaults to `PORT=3000`.
 
 | Method and route | Purpose |
 | --- | --- |
-| `GET /health` | Health response `{ "status": "ok" }`. |
+| `GET /health` | Health and server identity: `status`, `version`, `commit`, `startedAt`, `environment`, and database `host`/`port`/`name` without credentials. |
 | `GET /.well-known/openid-configuration` | OpenID Connect discovery. |
 | `GET /.well-known/oauth-authorization-server` | OAuth authorization-server metadata. |
 | `GET /oauth/authorize` | Authorization-code request and login/consent UI. S256 PKCE is mandatory. |
@@ -37,6 +37,25 @@ Use `client_secret_basic` for those grants.
 `/api/picture/:userId` sets a five-minute public cache and is not self-only.
 The separate `/internal/users/:userId/picture` route requires the internal
 bearer token.
+
+## Diagnostics
+
+`GET /health` identifies the running build and database so a stale replica can
+be ruled out in one request. The database identity comes from `DATABASE_URL`
+and never includes credentials or query parameters. Set `BUILD_COMMIT` (or run
+in CI with `GIT_COMMIT`, `GITHUB_SHA`, or `VERCEL_GIT_COMMIT_SHA`) to report the
+deployed commit.
+
+Use the live client registry doctor to compare the local database with the
+running server and verify that a client is visible:
+
+```bash
+bun run clients:doctor <clientId> [serverUrl]
+```
+
+The command prints the local client row, the server's `/health` identity, and
+the live `/oauth/clients/:id` response. It warns when the local client was
+written after the server started, which usually means the server is stale.
 
 ## Internal listener
 
@@ -85,6 +104,7 @@ values are read directly from `process.env`.
 | `DATABASE_POOL_IDLE_TIMEOUT_MS` | Pool idle timeout; default `10000` ms. |
 | `DATABASE_CONNECTION_TIMEOUT_MS` | Pool connection timeout; default `5000` ms. |
 | `DATABASE_STATEMENT_TIMEOUT_MS` | Optional PostgreSQL statement timeout in milliseconds. |
+| `BUILD_COMMIT` | Optional commit identifier reported by `/health` and startup logs. `GIT_COMMIT`, `GITHUB_SHA`, and `VERCEL_GIT_COMMIT_SHA` are also read as fallbacks. |
 
 `OIDC_CLIENTS_JSON` entries can define `clientId`, `name`,
 `clientSecret`, `redirectUris`, `public`, `scopes`, `resourceScopes`,
@@ -101,7 +121,8 @@ The numeric `code` field is an application code, not the HTTP status.
 
 | Code | Error | Meaning |
 | --- | --- | --- |
-| `14001` | `invalid_client` / `invalid_request` | Client ID is unknown or unavailable. |
+| `14001` | `invalid_client` / `invalid_request` | Client ID is not registered. |
+| `14002` | `invalid_client` / `invalid_request` | Client is registered but disabled. Re-enable it in the client TUI. |
 | `14003` | `invalid_client` | A public client sent a secret. |
 | `14004` | `invalid_client` | Confidential client secret is missing or invalid. |
 | `14005` | `invalid_client` | Client has no linked organizations. |
