@@ -92,12 +92,13 @@ check the build and database identity first:
 
 ```bash
 curl -s https://auth.example/health
-bun run clients:doctor <clientId> https://auth.example
+bun run clients:doctor <clientId> https://auth.example http://localhost:3000
 ```
 
-`clients:doctor` compares the local database identity with the server, checks
-whether the client row is visible to the running process, and warns when the
-client was written after the server started. Clients disabled in the TUI return
+`clients:doctor` compares the local database identity with each server, checks
+whether the client row is visible to the running process, and warns when a
+server is running an older build, when the databases differ, or when the client
+was written after the server started. Clients disabled in the TUI return
 `14002`; clients that do not exist return `14001`.
 
 ## Run locally
