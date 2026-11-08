@@ -6,7 +6,7 @@ The public listener defaults to `PORT=3000`.
 
 | Method and route | Purpose |
 | --- | --- |
-| `GET /health` | Health and server identity: `status`, `version`, `commit`, `startedAt`, `environment`, and database `host`/`port`/`name` without credentials. |
+| `GET /health` | Health and server identity: `status`, `version`, `commit`, `startedAt`, `environment`, `pid`, and database `host`/`port`/`name` without credentials. |
 | `GET /.well-known/openid-configuration` | OpenID Connect discovery. |
 | `GET /.well-known/oauth-authorization-server` | OAuth authorization-server metadata. |
 | `GET /oauth/authorize` | Authorization-code request and login/consent UI. S256 PKCE is mandatory. |
@@ -46,16 +46,17 @@ and never includes credentials or query parameters. Set `BUILD_COMMIT` (or run
 in CI with `GIT_COMMIT`, `GITHUB_SHA`, or `VERCEL_GIT_COMMIT_SHA`) to report the
 deployed commit.
 
-Use the live client registry doctor to compare the local database with the
-running server and verify that a client is visible:
+Use the live client registry doctor to compare the local database with one or
+more running servers and verify that a client is visible:
 
 ```bash
-bun run clients:doctor <clientId> [serverUrl]
+bun run clients:doctor <clientId> [serverUrl...]
 ```
 
-The command prints the local client row, the server's `/health` identity, and
-the live `/oauth/clients/:id` response. It warns when the local client was
-written after the server started, which usually means the server is stale.
+The command prints the local client row, each server's `/health` identity, and
+the live `/oauth/clients/:id` response. It warns when a server does not expose
+build identity because it is running an older build, when the databases differ,
+or when the local client was written after the server started.
 
 ## Internal listener
 
@@ -85,7 +86,7 @@ values are read directly from `process.env`.
 | `DATABASE_URL` | PostgreSQL connection string; required. |
 | `INTERNAL_API_HOST` | Internal listener bind address; default `127.0.0.1`. |
 | `INTERNAL_API_PORT` | Internal listener port; default `3001`. |
-| `INTERNAL_API_TOKEN` | Required, at least 32 characters. |
+| `INTERNAL_API_TOKEN` | Required, at least 32 characters. Placeholder values from `.env.example` are rejected. |
 | `MANAGEMENT_PORTAL_CLIENT_ID` | Required client ID expected in delegated actor tokens. |
 | `MANAGEMENT_PORTAL_AUDIENCE` | Required resource audience expected in delegated actor tokens. |
 | `MANAGEMENT_PORTAL_SCOPE` | Required scope expected in delegated actor tokens; default `noesis.access`. |
@@ -110,6 +111,9 @@ values are read directly from `process.env`.
 `clientSecret`, `redirectUris`, `public`, `scopes`, `resourceScopes`,
 `permissions`, `defaultPermissions`, `resources`, `requireConsent`,
 `filterMode`, `filterContent`, and `organizationIds`.
+
+Redirect URIs must use HTTP or HTTPS, cannot embed credentials, and may use the
+ephemeral `http://localhost:*/path` form only for public clients.
 
 Identity scopes are `openid`, `profile`, `email`, and `offline_access`.
 Custom scopes belong to a resource server. Permission grants are app-specific

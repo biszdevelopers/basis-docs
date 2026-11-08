@@ -600,8 +600,9 @@ Your app still needs its own session cookie and CSRF protection.
 
 The process-local 120-per-minute limits apply to token, revoke, authorize,
 consent, Microsoft callback, public client info, and `/api/me` routes. They
-are not shared across replicas. The limiter reads forwarded IP headers, so a
-reverse proxy should overwrite them with trusted values.
+are not shared across replicas. Forwarded IP headers are honored only when the
+socket peer is a loopback or private proxy address, so a reverse proxy must
+overwrite `X-Forwarded-For` or `X-Real-IP` with the trusted client address.
 
 ### Diagnosing a stale client registry
 
@@ -610,14 +611,16 @@ build and database that answered the request:
 
 ```bash
 curl -s https://auth.example/health
-bun run clients:doctor <clientId> https://auth.example
+bun run clients:doctor <clientId> https://auth.example http://localhost:3000
 ```
 
-`/health` reports the version, optional commit, start time, environment, and
-sanitized database host, port, and name. The doctor command also checks whether
-the local client row is visible to the running server and warns when the client
-was written after the server started. Re-enable disabled clients in the TUI;
-they return `14002` rather than `14001`.
+`/health` reports the version, optional commit, start time, environment,
+process ID, and sanitized database host, port, and name. The doctor command
+checks every supplied server, warns when one does not expose build identity
+(older build), and checks whether the local client row is visible to the running
+server. It also warns when the databases differ or when the client was written
+after the server started. Re-enable disabled clients in the TUI; they return
+`14002` rather than `14001`.
 
 ### Common error codes
 

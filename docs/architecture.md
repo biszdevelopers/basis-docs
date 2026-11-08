@@ -75,7 +75,8 @@ token families, and remembered consent.
   next request and client edits become visible within the TTL.
 - Disabled clients are rejected with `14002`; missing clients return `14001`.
 - `GET /health` and the startup log report the package version, optional commit,
-  start time, environment, and sanitized database host, port, and name.
+  start time, environment, process ID, bound port, and sanitized database host,
+  port, and name.
 - Resource-server rows are checked during authorization and token issuance.
 - Discovery metadata is cached for 300 seconds by HTTP clients; JWKS advertises
   `max-age=300` and `stale-while-revalidate=300`.
