@@ -78,13 +78,27 @@ walkthrough to generate an `sk-...` value. Copy the secret when printed because
 the database stores only a scrypt hash.
 
 The full menu is `bun run clients`. It supports listing, adding, editing,
-removing clients, and registering resources. Database-managed changes are
-available without a restart. Client metadata can remain cached for up to
-60 seconds.
+disabling, removing clients, and registering resources. Database-managed
+changes are available without a restart. Client metadata can remain cached for
+up to 60 seconds, while a newly registered client is visible immediately. The
+TUI prints the resolved database host, port, and name before writing.
 
 For configuration-based registration, edit `OIDC_RESOURCES_JSON` and
 `OIDC_CLIENTS_JSON` in `.env`. Startup upserts configured rows. Removing an
 entry from JSON does not delete the database row.
+
+If a client appears in the database but the running server returns `14001`,
+check the build and database identity first:
+
+```bash
+curl -s https://auth.example/health
+bun run clients:doctor <clientId> https://auth.example
+```
+
+`clients:doctor` compares the local database identity with the server, checks
+whether the client row is visible to the running process, and warns when the
+client was written after the server started. Clients disabled in the TUI return
+`14002`; clients that do not exist return `14001`.
 
 ## Run locally
 

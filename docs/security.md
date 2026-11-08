@@ -48,7 +48,9 @@ when the caller must be authenticated with `INTERNAL_API_TOKEN`.
 
 Users are identified by the stored Microsoft provider, issuer, and subject.
 Disabling a user blocks future sign-ins, deletes their SSO sessions, revokes
-refresh-token families, and sets `tokensValidAfter`.
+refresh-token families, and sets `tokensValidAfter`. Re-enabling the user clears
+that barrier, so any still-unexpired access token issued before the disable can
+be accepted again.
 
 The example API middleware verifies access tokens locally. To enforce immediate
 per-user revocation, configure its `loadTokenSubject` callback to load

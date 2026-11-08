@@ -28,5 +28,5 @@ features:
     details: Users, organizations, client registrations, sessions, consents, permissions, codes, and refresh tokens are stored in PostgreSQL.
   - icon: 🧰
     title: Integration tools
-    details: Use the client-registration CLI, a development-only OIDC demo, and a private internal API for trusted management integrations.
+    details: Use the client-registration CLI, a live registry doctor, a development-only OIDC demo, and a private internal API for trusted management integrations.
 ---

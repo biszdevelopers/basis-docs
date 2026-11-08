@@ -5,6 +5,11 @@ listeners are part of the same service process and share this connection. The
 management portal UI, when deployed, should use the private internal API rather
 than connecting directly to PostgreSQL.
 
+`GET /health` reports the resolved database host, port, and database name with
+credentials and query parameters removed. Compare it with the connection string
+used by the client TUI when a newly registered client is not visible to the
+running server.
+
 ## Stored data
 
 The current schema includes:

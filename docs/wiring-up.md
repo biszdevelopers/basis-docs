@@ -603,13 +603,30 @@ consent, Microsoft callback, public client info, and `/api/me` routes. They
 are not shared across replicas. The limiter reads forwarded IP headers, so a
 reverse proxy should overwrite them with trusted values.
 
+### Diagnosing a stale client registry
+
+If a client exists in PostgreSQL but one origin returns `14001`, compare the
+build and database that answered the request:
+
+```bash
+curl -s https://auth.example/health
+bun run clients:doctor <clientId> https://auth.example
+```
+
+`/health` reports the version, optional commit, start time, environment, and
+sanitized database host, port, and name. The doctor command also checks whether
+the local client row is visible to the running server and warns when the client
+was written after the server started. Re-enable disabled clients in the TUI;
+they return `14002` rather than `14001`.
+
 ### Common error codes
 
 Numeric codes are application codes, not HTTP status codes.
 
 | Code | Meaning | Fix |
 | --- | --- | --- |
-| `14001` | Client is unknown or unavailable. | Check the client ID and registration. |
+| `14001` | Client is not registered. | Check the client ID and registration. |
+| `14002` | Client is registered but disabled. | Re-enable it in the client TUI. |
 | `14003` | A public client sent a secret. | Remove client-secret authentication. |
 | `14004` | Confidential-client authentication failed. | Check the secret and use HTTP Basic. |
 | `14100` | Redirect URI is missing or unregistered. | Compare the URI character-for-character. |
