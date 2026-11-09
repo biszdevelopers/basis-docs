@@ -78,10 +78,16 @@ walkthrough to generate an `sk-...` value. Copy the secret when printed because
 the database stores only a scrypt hash.
 
 The full menu is `bun run clients`. It supports listing, adding, editing,
-disabling, removing clients, and registering resources. Database-managed
-changes are available without a restart. Client metadata can remain cached for
-up to 60 seconds, while a newly registered client is visible immediately. The
-TUI prints the resolved database host, port, and name before writing.
+disabling, removing clients, and registering resources. Listing shows every
+stored client detail except the secret value. Editing can set a custom client
+ID or regenerate one by entering `new`; the move carries the permission
+catalog, defaults, grants, organizations, consents, and outstanding
+authorization data to the new ID. Update downstream client configurations and
+remove the old ID from `OIDC_CLIENTS_JSON` or startup will recreate it.
+Database-managed changes are available without a restart. Client metadata can
+remain cached for up to 60 seconds, while a newly registered client is visible
+immediately. The TUI prints the resolved database host, port, and name before
+writing.
 
 For configuration-based registration, edit `OIDC_RESOURCES_JSON` and
 `OIDC_CLIENTS_JSON` in `.env`. Startup upserts configured rows. Removing an
